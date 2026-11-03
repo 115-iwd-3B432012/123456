@@ -1,0 +1,627 @@
+
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>饗味 Bistro 點餐系統</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,"Microsoft JhengHei",sans-serif;background:#f7f3ed;color:#302b26}
+header{background:#382d25;color:white;padding:18px 5%;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{margin:0;font-size:24px}
+button{border:0;border-radius:8px;padding:10px 15px;cursor:pointer;font-weight:bold}
+button:disabled{opacity:.5;cursor:not-allowed}
+.primary{background:#a45d37;color:white}
+.dark{background:#382d25;color:white}
+.danger{background:#b83b35;color:white}
+.light{background:#eee5db;color:#382d25}
+.container{max-width:1100px;margin:25px auto;padding:0 16px}
+h2{margin-top:28px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.card,.panel{background:white;padding:18px;border-radius:13px;box-shadow:0 3px 12px #0000000c}
+.food-icon{font-size:45px}
+.price{color:#a45d37;font-size:20px;font-weight:bold}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+input,select,textarea{width:100%;padding:11px;border:1px solid #ddd;border-radius:7px;margin:6px 0 12px;font-size:15px}
+label{font-weight:bold;font-size:14px}
+.cart-item{padding:12px 0;border-bottom:1px solid #eee}
+.qty{display:flex;align-items:center;gap:10px}
+.qty button{padding:5px 11px}
+.total{font-size:23px;font-weight:bold;color:#a45d37}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}
+.order{border:1px solid #eee;padding:15px;border-radius:10px;margin:12px 0}
+.muted{color:#777;font-size:13px}
+.tag{background:#f3e8dc;padding:5px 9px;border-radius:20px;font-size:12px}
+footer{text-align:center;padding:35px;color:#888}
+@media(max-width:600px){
+header{padding:15px}
+.container{margin:15px auto}
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+<header>
+  <div>
+    <h1>🍽️ 饗味 Bistro</h1>
+    <small>美味餐點，輕鬆點選</small>
+  </div>
+  <div class="row">
+    <button class="light" @click="showAdminLogin">管理員後台</button>
+    <button class="primary" @click="admin=false">顧客點餐</button>
+  </div>
+</header>
+
+<!-- 顧客點餐 -->
+<div class="container" v-if="!admin">
+
+  <h2>今日菜單</h2>
+  <p class="muted">選擇喜歡的餐點，加入購物車即可點餐。</p>
+
+  <div class="grid">
+    <div class="card" v-for="food in menu" :key="food.id">
+      <div class="food-icon">{{food.icon}}</div>
+      <h3>{{food.name}}</h3>
+      <p class="muted">{{food.description}}</p>
+      <div class="row">
+        <span class="price">${{food.price}}</span>
+        <button class="primary" @click="addToCart(food)">加入購物車</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 購物車 -->
+  <h2>🛒 我的購物車</h2>
+
+  <div class="panel">
+    <p v-if="cart.length===0" class="muted">
+      購物車目前是空的。
+    </p>
+
+    <div class="cart-item row" v-for="item in cart" :key="item.id">
+      <div>
+        <b>{{item.name}}</b>
+        <div class="muted">${{item.price}} × {{item.qty}}</div>
+      </div>
+
+      <div class="qty">
+        <button class="light" @click="changeQty(item,-1)">－</button>
+        {{item.qty}}
+        <button class="light" @click="changeQty(item,1)">＋</button>
+      </div>
+
+      <b>${{item.price*item.qty}}</b>
+    </div>
+
+    <div class="row" style="margin-top:18px">
+      <b>訂單總額</b>
+      <span class="total">${{cartTotal}}</span>
+    </div>
+  </div>
+
+  <!-- 顧客資料 -->
+  <h2>📝 顧客資料與結帳</h2>
+
+  <div class="panel">
+    <label>顧客姓名</label>
+    <input v-model="customer.name" placeholder="請輸入姓名">
+
+    <label>聯絡電話</label>
+    <input v-model="customer.phone" placeholder="請輸入電話">
+
+    <label>用餐方式</label>
+    <select v-model="customer.method">
+      <option>內用</option>
+      <option>外帶</option>
+    </select>
+
+    <label>備註</label>
+    <textarea v-model="customer.note" placeholder="例如：不要香菜"></textarea>
+
+    <button class="primary"
+      style="width:100%"
+      :disabled="cart.length===0"
+      @click="checkout">
+      確認送出訂單
+    </button>
+  </div>
+
+  <!-- AI 助手 -->
+  <h2>🤖 AI 點餐助手</h2>
+
+  <div class="panel">
+    <p class="muted">
+      可以詢問菜單推薦、餐點內容或搭配建議。
+      使用此功能才需要啟動 Ollama。
+    </p>
+
+    <div v-for="(msg,index) in messages"
+      :key="index"
+      style="margin:10px 0;white-space:pre-wrap">
+      <b>{{msg.role==='user'?'你':'AI 助手'}}：</b>{{msg.text}}
+    </div>
+
+    <input
+      v-model="aiQuestion"
+      placeholder="例如：推薦兩人吃的餐點"
+      @keyup.enter="askAI">
+
+    <button class="dark" @click="askAI" :disabled="aiLoading">
+      {{aiLoading?'AI 回覆中...':'詢問 AI'}}
+    </button>
+
+    <p class="muted">{{aiError}}</p>
+  </div>
+
+</div>
+
+<!-- 管理員後台 -->
+<div class="container" v-if="admin">
+
+  <div class="row">
+    <h2>⚙️ 管理員後台</h2>
+    <button class="light" @click="admin=false">返回點餐</button>
+  </div>
+
+  <div class="tabs">
+    <button
+      :class="adminTab==='orders'?'primary':'light'"
+      @click="adminTab='orders'">
+      訂單管理
+    </button>
+
+    <button
+      :class="adminTab==='menu'?'primary':'light'"
+      @click="adminTab='menu'">
+      菜單管理
+    </button>
+  </div>
+
+  <!-- 訂單管理 -->
+  <section v-if="adminTab==='orders'">
+
+    <h3>📋 所有訂單（{{orders.length}}）</h3>
+
+    <p v-if="orders.length===0" class="muted">
+      目前沒有訂單。
+    </p>
+
+    <div class="order" v-for="order in orders" :key="order.id">
+
+      <div class="row">
+        <b>訂單 #{{order.id}}</b>
+        <span class="tag">{{order.status}}</span>
+      </div>
+
+      <p class="muted">{{order.time}}</p>
+
+      <p>顧客：{{order.customer.name}}｜電話：{{order.customer.phone}}</p>
+      <p>用餐方式：{{order.customer.method}}</p>
+
+      <p v-for="item in order.items" :key="item.id">
+        {{item.name}} × {{item.qty}}：${{item.price*item.qty}}
+      </p>
+
+      <p v-if="order.customer.note">
+        備註：{{order.customer.note}}
+      </p>
+
+      <div class="row">
+        <b class="price">總計：${{order.total}}</b>
+
+        <select
+          style="width:auto"
+          v-model="order.status"
+          @change="saveOrders">
+          <option>待處理</option>
+          <option>製作中</option>
+          <option>已完成</option>
+          <option>已取消</option>
+        </select>
+      </div>
+
+      <button class="danger" @click="deleteOrder(order.id)">
+        刪除訂單
+      </button>
+
+    </div>
+  </section>
+
+  <!-- 菜單管理 -->
+  <section v-if="adminTab==='menu'">
+
+    <h3>🍴 菜單管理</h3>
+
+    <div class="panel">
+
+      <h4>{{editingId===null?'新增餐點':'修改餐點'}}</h4>
+
+      <label>餐點名稱</label>
+      <input v-model="foodForm.name" placeholder="例如：香煎雞腿排">
+
+      <label>價格</label>
+      <input type="number" min="0" v-model.number="foodForm.price">
+
+      <label>圖示（Emoji）</label>
+      <input v-model="foodForm.icon" placeholder="例如：🍗">
+
+      <label>餐點介紹</label>
+      <input v-model="foodForm.description" placeholder="餐點內容介紹">
+
+      <div class="row">
+        <button class="primary" @click="saveFood">
+          {{editingId===null?'新增餐點':'儲存修改'}}
+        </button>
+
+        <button class="light" @click="resetFoodForm">
+          清除欄位
+        </button>
+      </div>
+
+    </div>
+
+    <h3>目前菜單</h3>
+
+    <div class="order" v-for="food in menu" :key="food.id">
+
+      <div class="row">
+        <div>
+          <b>{{food.icon}} {{food.name}}</b>
+          <div class="muted">{{food.description}}</div>
+          <span class="price">${{food.price}}</span>
+        </div>
+
+        <div>
+          <button class="light" @click="editFood(food)">修改</button>
+          <button class="danger" @click="deleteFood(food.id)">刪除</button>
+        </div>
+      </div>
+
+    </div>
+
+  </section>
+</div>
+
+<!-- 訂單完成畫面 -->
+<div v-if="receipt" class="container">
+  <div class="panel">
+
+    <h2>✅ 訂單已建立</h2>
+
+    <p>訂單編號：#{{receipt.id}}</p>
+    <p>顧客：{{receipt.customer.name}}</p>
+
+    <p>
+      訂單金額：
+      <b class="price">${{receipt.total}}</b>
+    </p>
+
+    <p class="muted">
+      這是本機展示訂單，尚未傳送至真實餐廳。
+    </p>
+
+    <button class="primary" @click="receipt=null">
+      繼續點餐
+    </button>
+
+  </div>
+</div>
+
+<footer>饗味 Bistro © 點餐系統展示版</footer>
+
+</div>
+
+<script>
+const {createApp}=Vue;
+
+createApp({
+
+data(){
+return {
+
+admin:false,
+adminTab:'orders',
+
+menu:JSON.parse(localStorage.getItem('bistro_menu')||'null')||[
+{id:1,name:'香煎雞腿排',price:220,icon:'🍗',description:'外皮酥脆、肉質鮮嫩'},
+{id:2,name:'奶油培根義大利麵',price:180,icon:'🍝',description:'濃郁奶油白醬'},
+{id:3,name:'經典牛肉漢堡',price:200,icon:'🍔',description:'多汁牛肉搭配生菜'},
+{id:4,name:'鮮蝦燉飯',price:240,icon:'🍤',description:'香濃海鮮風味'},
+{id:5,name:'酥炸薯條',price:80,icon:'🍟',description:'金黃酥脆'},
+{id:6,name:'蜂蜜檸檬茶',price:60,icon:'🍹',description:'酸甜清爽'}
+],
+
+cart:[],
+
+orders:JSON.parse(localStorage.getItem('bistro_orders')||'[]'),
+
+customer:{
+name:'',
+phone:'',
+method:'內用',
+note:''
+},
+
+receipt:null,
+editingId:null,
+
+foodForm:{
+name:'',
+price:0,
+icon:'🍽️',
+description:''
+},
+
+messages:[],
+aiQuestion:'',
+aiLoading:false,
+aiError:''
+
+}
+},
+
+computed:{
+cartTotal(){
+return this.cart.reduce((sum,item)=>sum+item.price*item.qty,0)
+}
+},
+
+methods:{
+
+saveMenu(){
+localStorage.setItem('bistro_menu',JSON.stringify(this.menu))
+},
+
+saveOrders(){
+localStorage.setItem('bistro_orders',JSON.stringify(this.orders))
+},
+
+addToCart(food){
+const item=this.cart.find(x=>x.id===food.id);
+
+if(item){
+item.qty++;
+}else{
+this.cart.push({...food,qty:1});
+}
+},
+
+changeQty(item,amount){
+item.qty+=amount;
+
+if(item.qty<=0){
+this.cart=this.cart.filter(x=>x.id!==item.id);
+}
+},
+
+checkout(){
+
+if(!this.customer.name.trim()||!this.customer.phone.trim()){
+alert('請填寫姓名與電話');
+return;
+}
+
+const order={
+id:Date.now().toString().slice(-8),
+time:new Date().toLocaleString(),
+customer:{...this.customer},
+items:this.cart.map(x=>({...x})),
+total:this.cartTotal,
+status:'待處理'
+};
+
+this.orders.unshift(order);
+this.saveOrders();
+
+this.receipt=order;
+this.cart=[];
+
+this.customer={
+name:'',
+phone:'',
+method:'內用',
+note:''
+};
+
+window.scrollTo(0,0);
+},
+
+showAdminLogin(){
+
+const password=prompt('請輸入管理員密碼');
+
+if(password==='1234'){
+this.admin=true;
+this.adminTab='orders';
+}else if(password!==null){
+alert('密碼錯誤');
+}
+
+},
+
+saveFood(){
+
+const f=this.foodForm;
+
+if(!f.name.trim()||
+!Number.isFinite(Number(f.price))||
+Number(f.price)<0){
+
+alert('請輸入正確的餐點名稱與價格');
+return;
+
+}
+
+if(this.editingId===null){
+
+this.menu.push({
+...f,
+id:Date.now(),
+price:Number(f.price)
+});
+
+}else{
+
+const index=this.menu.findIndex(x=>x.id===this.editingId);
+
+if(index!==-1){
+this.menu[index]={
+...f,
+id:this.editingId,
+price:Number(f.price)
+};
+}
+
+}
+
+this.saveMenu();
+this.resetFoodForm();
+
+},
+
+editFood(food){
+
+this.editingId=food.id;
+
+this.foodForm={
+name:food.name,
+price:food.price,
+icon:food.icon,
+description:food.description
+};
+
+window.scrollTo(0,0);
+
+},
+
+deleteFood(id){
+
+if(!confirm('確定要刪除此餐點？'))return;
+
+this.menu=this.menu.filter(x=>x.id!==id);
+this.saveMenu();
+
+},
+
+resetFoodForm(){
+
+this.editingId=null;
+
+this.foodForm={
+name:'',
+price:0,
+icon:'🍽️',
+description:''
+};
+
+},
+
+deleteOrder(id){
+
+if(!confirm('確定刪除此訂單？'))return;
+
+this.orders=this.orders.filter(x=>x.id!==id);
+this.saveOrders();
+
+},
+
+async askAI(){
+
+if(!this.aiQuestion.trim()||this.aiLoading)return;
+
+const question=this.aiQuestion.trim();
+
+this.messages.push({
+role:'user',
+text:question
+});
+
+this.aiQuestion='';
+this.aiLoading=true;
+this.aiError='';
+
+try{
+
+const response=await fetch(
+'http://localhost:11434/api/chat',
+{
+method:'POST',
+
+headers:{
+'Content-Type':'application/json'
+},
+
+body:JSON.stringify({
+
+model:'qwen2.5:7b',
+stream:false,
+
+messages:[
+
+{
+role:'system',
+content:
+'你是饗味 Bistro 的點餐助手。請使用繁體中文回答。以下是目前菜單：'+
+this.menu.map(x=>
+x.name+' $'+x.price+'：'+x.description
+).join('；')
+},
+
+...this.messages.slice(-8).map(m=>({
+role:m.role==='user'?'user':'assistant',
+content:m.text
+}))
+
+]
+
+})
+
+}
+);
+
+if(!response.ok){
+throw new Error('HTTP '+response.status);
+}
+
+const data=await response.json();
+
+if(!data.message||!data.message.content){
+throw new Error('Ollama 回傳格式不正確');
+}
+
+this.messages.push({
+role:'assistant',
+text:data.message.content
+});
+
+}catch(e){
+
+console.error('Ollama 連線錯誤：',e);
+
+this.aiError=
+'連線失敗：請確認 Ollama 正在執行，且已允許此網頁來源連線。若有詳細錯誤，請按 F12 查看 Console。';
+
+}finally{
+
+this.aiLoading=false;
+
+}
+
+}
+
+},
+
+mounted(){
+this.saveMenu();
+}
+
+}).mount('#app');
+
+</script>
+
+</body>
+</html>
